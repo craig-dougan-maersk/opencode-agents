@@ -50,8 +50,9 @@ Reload the config (or `/reload`). On first load the plugin writes five Markdown
 agent files into `~/.config/opencode/agents/` and OpenCode picks them up.
 
 `default_agent` is not something a plugin can set in your config file, so add
-that line yourself if you want new sessions to start on the orchestrator.
-`opencode run` still starts on `build` unless you pass `--agent orchestrator`.
+that line yourself: it is what makes a new session start on the orchestrator.
+Without it, new sessions and `opencode run` start on `build`, and you pass
+`--agent orchestrator` to opt in for a single run.
 
 ## What it installs
 
@@ -71,8 +72,7 @@ you have changed is never overwritten unless you set `overwrite: true`.
 
 OpenCode's plugin API can update and remove agents but cannot create new ones, so
 installation means writing these definition files into a directory OpenCode
-already discovers. The plugin also registers `/agents-status` and can select the
-default agent through the runtime agent registry.
+already discovers. The plugin also registers the `/agents-status` command.
 
 ## Options
 
@@ -83,7 +83,6 @@ All options are optional.
 | `install` | `"global"` | `"global"`, `"project"`, or `"none"` to install nothing. |
 | `directory` | unset | Explicit target directory for the agent files. Supports `~`. Relative paths resolve against the project root. |
 | `overwrite` | `false` | Replace agent files you edited by hand. |
-| `defaultAgent` | `"orchestrator"` | Agent to select as the default primary. `false` leaves it alone. |
 | `strict` | `false` | Add an `edit: deny` rule to the orchestrator so every write must go through `implementer`. |
 | `models.orchestrator` | `anthropic/claude-opus-5-5#high` | Model for `orchestrator`. |
 | `models.cheap` | `opencode-go/deepseek-v4.1-flash#low` | Model for `scout`, `implementer`, `verifier`. |

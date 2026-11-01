@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "defaultProfile": "default",
+  "profiles": {
+    "default": {
+      "description": "Default profile",
+      "envFiles": [
+        ".env"
+      ],
+      "variables": {},
+      "secrets": {}
+    }
+  },
+  "vault": {
+    "stores": [],
+    "ttlSeconds": 60
+  }
+}

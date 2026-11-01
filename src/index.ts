@@ -26,7 +26,6 @@ interface Config {
   readonly install: InstallMode
   readonly directory?: string
   readonly overwrite: boolean
-  readonly defaultAgent: string | false
   readonly strict: boolean
   readonly models: { orchestrator: string; cheap: string; analyst: string }
 }
@@ -42,18 +41,11 @@ function resolveConfig(options: Readonly<Record<string, unknown>>): Config {
   const install: InstallMode = mode === "project" || mode === "none" ? mode : "global"
   const models = (options.models ?? {}) as Record<string, unknown>
   const directory = typeof options.directory === "string" && options.directory.length > 0 ? options.directory : undefined
-  const defaultAgent =
-    options.defaultAgent === false
-      ? false
-      : typeof options.defaultAgent === "string"
-        ? options.defaultAgent
-        : "orchestrator"
 
   return {
     install,
     directory,
     overwrite: options.overwrite === true,
-    defaultAgent,
     strict: options.strict === true,
     models: {
       orchestrator: typeof models.orchestrator === "string" ? models.orchestrator : DEFAULT_MODELS.orchestrator,
@@ -128,16 +120,15 @@ async function statusReport(
     // Listing is best-effort: the report still works when the agent registry is unavailable.
   }
 
-  const lines = [
-    "## Orchestrator agents",
-    "",
-    `Target: \`${targetDir}\``,
-    `Default agent: ${config.defaultAgent === false ? "unchanged" : `\`${config.defaultAgent}\``}`,
-    `Strict mode: ${config.strict ? "on (orchestrator cannot edit)" : "off"}`,
-    "",
-    "| Agent | File | Model | Loaded |",
-    "| --- | --- | --- | --- |",
-  ]
+    const lines = [
+      "## Orchestrator agents",
+      "",
+      `Target: \`${targetDir}\``,
+      `Strict mode: ${config.strict ? "on (orchestrator cannot edit)" : "off"}`,
+      "",
+      "| Agent | File | Model | Loaded |",
+      "| --- | --- | --- | --- |",
+    ]
 
   for (const source of sources) {
     const id = agentIdOf(source)
@@ -189,13 +180,6 @@ export default Plugin.define({
       } catch (error) {
         console.log(`[opencode-agents] install failed: ${error instanceof Error ? error.message : String(error)}`)
       }
-    }
-
-    if (config.defaultAgent !== false) {
-      const wanted = config.defaultAgent
-      await context.agent.transform((editor) => {
-        if (editor.get(wanted)) editor.default(wanted)
-      })
     }
 
     await context.command.transform((editor) => {

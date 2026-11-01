@@ -22,16 +22,10 @@ function resolveConfig(options) {
     const install = mode === "project" || mode === "none" ? mode : "global";
     const models = (options.models ?? {});
     const directory = typeof options.directory === "string" && options.directory.length > 0 ? options.directory : undefined;
-    const defaultAgent = options.defaultAgent === false
-        ? false
-        : typeof options.defaultAgent === "string"
-            ? options.defaultAgent
-            : "orchestrator";
     return {
         install,
         directory,
         overwrite: options.overwrite === true,
-        defaultAgent,
         strict: options.strict === true,
         models: {
             orchestrator: typeof models.orchestrator === "string" ? models.orchestrator : DEFAULT_MODELS.orchestrator,
@@ -99,7 +93,6 @@ async function statusReport(context, config, targetDir, sources) {
         "## Orchestrator agents",
         "",
         `Target: \`${targetDir}\``,
-        `Default agent: ${config.defaultAgent === false ? "unchanged" : `\`${config.defaultAgent}\``}`,
         `Strict mode: ${config.strict ? "on (orchestrator cannot edit)" : "off"}`,
         "",
         "| Agent | File | Model | Loaded |",
@@ -157,13 +150,6 @@ export default Plugin.define({
             catch (error) {
                 console.log(`[opencode-agents] install failed: ${error instanceof Error ? error.message : String(error)}`);
             }
-        }
-        if (config.defaultAgent !== false) {
-            const wanted = config.defaultAgent;
-            await context.agent.transform((editor) => {
-                if (editor.get(wanted))
-                    editor.default(wanted);
-            });
         }
         await context.command.transform((editor) => {
             editor.add({
