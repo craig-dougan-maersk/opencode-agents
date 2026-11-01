@@ -1,0 +1,44 @@
+{
+  "name": "opencode-agents",
+  "version": "1.0.0",
+  "description": "OpenCode plugin: install an orchestrator profile on an expensive model with cheap subagents for retrieval, mechanical edits and verification",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/craig-dougan-maersk/opencode-agents.git"
+  },
+  "homepage": "https://github.com/craig-dougan-maersk/opencode-agents#readme",
+  "bugs": {
+    "url": "https://github.com/craig-dougan-maersk/opencode-agents/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "agents",
+    "subagents",
+    "orchestrator",
+    "model-routing"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "agents",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "compile": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run compile && node test/run.js"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
