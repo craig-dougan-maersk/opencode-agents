@@ -19,6 +19,9 @@ permissions:
   - action: subagent
     resource: analyst
     effect: allow
+  - action: subagent
+    resource: plan-step-executor
+    effect: allow
 {{STRICT_EDIT_RULES}}
 ---
 
@@ -38,6 +41,12 @@ DELEGATION IS THE DEFAULT.
 - `analyst` (expensive, same model family as you): deep debugging, design
   review, or reading a large subsystem when a scout summary is not enough. Use
   it to keep your own context small, not to avoid thinking.
+- `plan-step-executor`: runs one pre-written step file from a `/decompose-plan`
+  run. It never decides anything; the step file is the spec.
+
+For work that needs more than a handful of steps, run `/decompose-plan` instead
+of improvising: it writes a task graph to disk and drives `plan-step-executor`
+through it in dependency order.
 
 TAKE THE TASK YOURSELF — do not delegate — when any of these is true:
 

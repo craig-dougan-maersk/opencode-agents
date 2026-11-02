@@ -16,6 +16,7 @@ subagents exist as options at all.
 | `scout` | subagent | `opencode-go/deepseek-v4.1-flash#low` | $0.15 / $0.60 |
 | `implementer` | subagent | `opencode-go/deepseek-v4.1-flash#low` | $0.15 / $0.60 |
 | `verifier` | subagent | `opencode-go/deepseek-v4.1-flash#low` | $0.15 / $0.60 |
+| `plan-step-executor` | subagent | `opencode-go/deepseek-v4.1-flash#low` | $0.15 / $0.60 |
 
 That is roughly 27x on input and 33x on output between the tiers, so the point of
 the setup is to keep the expensive model's context small and its turns few.
@@ -63,7 +64,12 @@ Without it, new sessions and `opencode run` start on `build`, and you pass
 ├── scout.md                   read-only retrieval, no shell, no edits
 ├── implementer.md             mechanical edits only
 ├── verifier.md                runs builds and tests, fixes nothing
+├── plan-step-executor.md      executes one pre-written step file
 └── .opencode-agents.json      manifest of what this plugin wrote
+
+~/.config/opencode/commands/
+├── decompose-plan.md          /decompose-plan, the task-graph workflow
+└── .opencode-commands.json    manifest of what this plugin wrote
 ```
 
 The files are ordinary agent definitions — plain Markdown with YAML
@@ -72,7 +78,50 @@ you have changed is never overwritten unless you set `overwrite: true`.
 
 OpenCode's plugin API can update and remove agents but cannot create new ones, so
 installation means writing these definition files into a directory OpenCode
-already discovers. The plugin also registers the `/agents-status` command.
+already discovers. The plugin also registers the `/agents-status` command and the
+`/agents` settings menu.
+
+## Settings menu
+
+Run `/agents`, or pick **Agents: manage** from the command palette (Ctrl+P), to
+manage the agents directory without editing Markdown. Every field writes straight
+back to the agent's `.md` file, and the server part reloads the agent registry so
+the change applies without a restart.
+
+- **List.** Every agent in the target directory: the bundled five, agents you
+  created, and any `.md` files you already keep there. Each row shows mode, model
+  and whether OpenCode has loaded it.
+- **New agent.** Name, mode, model, description, permissions preset and
+  instructions. The name is the file name and therefore the agent ID.
+- **Edit.** Description, instructions, model, mode, colour, steps, hidden flag
+  and permissions. Permissions offer presets (read-only, edits, edits + git,
+  full access) and an add/edit/remove rule editor.
+- **Model.** A searchable list of every enabled model available at the current
+  location, grouped by provider, with input/output price and context window. When
+  a model has variants, a second step picks `#low`, `#high`, and so on, or the
+  model default. **Inherit from the session** leaves the `model` key out.
+- **Instructions.** A full-screen editor for the Markdown body. Ctrl+S saves,
+  Esc cancels.
+- **Clone, rename, delete.** Renaming a bundled agent copies it to the new name
+  and disables the original so the installer does not recreate it. Subagent
+  permission rules that name the agent are rewritten; prose mentions are
+  reported so you can update prompts yourself.
+- **Reset and restore.** A customised bundled agent can be reset to the shipped
+  version, and any bundled agent removed from the menu can be restored later.
+
+The menu manages the directory selected by `install` and `directory` below. It
+runs in the terminal, but the files are written by the server part through an
+RPC method, so it also works when the terminal is attached to a remote server.
+
+There is no default keybind. Bind `agents.settings` in `cli.json` if you want
+one:
+
+```jsonc
+{
+  "keybinds": { "agents.settings": "ctrl+shift+a" }
+}
+```
+
 
 ## Options
 
@@ -82,7 +131,7 @@ All options are optional.
 | --- | --- | --- |
 | `install` | `"global"` | `"global"`, `"project"`, or `"none"` to install nothing. |
 | `directory` | unset | Explicit target directory for the agent files. Supports `~`. Relative paths resolve against the project root. |
-| `overwrite` | `false` | Replace agent files you edited by hand. |
+| `overwrite` | `false` | Replace agent files you edited by hand, including agents customised through `/agents`. |
 | `strict` | `false` | Add an `edit: deny` rule to the orchestrator so every write must go through `implementer`. |
 | `models.orchestrator` | `anthropic/claude-opus-5-5#high` | Model for `orchestrator`. |
 | `models.cheap` | `opencode-go/deepseek-v4.1-flash#low` | Model for `scout`, `implementer`, `verifier`. |
@@ -142,6 +191,55 @@ paths, the exact change, the acceptance check and the return format. The
 bundled prompts say so. Nesting depth is one by default, so cheap agents cannot
 spawn further agents — escalation always returns to the orchestrator.
 
+## Long tasks: `/decompose-plan`
+
+The loop above is deliberately light: plan, dispatch one bounded step, verify,
+review. For work that is too big for that — a feature spanning schema, service,
+API and tests — use `/decompose-plan`. It replaces the Claude Code skill of the
+same name and keeps the same split: the orchestrator plans on the expensive
+model, `plan-step-executor` types on the cheap one.
+
+```text
+/decompose-plan Add OAuth login with Google to the Flask app
+/decompose-plan run .plans/20261102-oauth-login
+/decompose-status
+```
+
+What it does:
+
+1. **Outline.** Investigate the codebase and write
+   `.plans/<date>-<slug>/outline.md`: goal, non-goals, facts, decisions and
+   level-1 steps.
+2. **Break down.** Split each step until it passes the leaf test (one concern,
+   ~3 files, no open decisions, mechanically verifiable). Leaves become
+   `steps/<ID>.md`.
+3. **Graph.** Write `graph.json` with dependencies and the files each leaf
+   writes, then validate it.
+4. **Dispatch.** Ask the task graph for ready tasks, start up to ten
+   `plan-step-executor` subagents in parallel, spot-check each `RESULT: DONE`,
+   and mark the task done or failed.
+5. **Finish.** A final `VERIFY` leaf runs the full suite; a permanently failed
+   task stops the run as `STUCK` and comes back to the orchestrator.
+
+All progress lives in `graph.json`, so a run survives compaction, a new turn or
+a restart. The state machine is a TypeScript port of the original
+`taskgraph.py` — no Python dependency:
+
+```sh
+node <plugin>/dist/taskgraph-cli.js validate      .plans/20261102-oauth-login
+node <plugin>/dist/taskgraph-cli.js ready         .plans/20261102-oauth-login --json
+node <plugin>/dist/taskgraph-cli.js status        .plans/20261102-oauth-login
+node <plugin>/dist/taskgraph-cli.js mark          .plans/20261102-oauth-login T2.1 done
+node <plugin>/dist/taskgraph-cli.js reset-running .plans/20261102-oauth-login
+```
+
+`/decompose-status` runs the same check without spending model tokens: with a
+path it prints that plan, without one it lists every plan under `.plans/`.
+
+The command is installed as an ordinary Markdown command, so it is yours to
+edit. The installer records what it wrote and will not overwrite your changes
+unless `overwrite: true`.
+
 ## Commands
 
 `/agents-status` reports, for each agent, its on-disk state, model and whether
@@ -152,7 +250,18 @@ OpenCode has actually loaded it:
 | `current` | matches this version of the plugin |
 | `outdated` | replaced automatically on the next load |
 | `modified` | edited locally; left alone unless `overwrite: true` |
+| `custom` | edited through `/agents`; left alone unless `overwrite: true` |
+| `disabled` | removed through `/agents`; restore it from the menu |
 | `missing` | recreated on the next load |
+
+The settings menu keeps two extra lists in `.opencode-agents.json`: `custom`
+holds bundled files you changed through the menu, and `disabled` holds bundled
+files you removed. Neither is touched by a plugin upgrade, and `/agents` can
+reset or restore them.
+
+`/decompose-plan [task | run <plan-dir>]` is the task-graph workflow described
+above. `/decompose-status [plan-dir]` is deterministic — it reads `graph.json`
+and prints the state without calling a model.
 
 ## Upgrading and uninstalling
 
@@ -162,22 +271,35 @@ agents the package no longer ships (again, only if unmodified).
 To uninstall, remove the plugin entry and delete the installed files:
 
 ```sh
-rm ~/.config/opencode/agents/{orchestrator,analyst,scout,implementer,verifier}.md
+rm ~/.config/opencode/agents/{orchestrator,analyst,scout,implementer,verifier,plan-step-executor}.md
 rm ~/.config/opencode/agents/.opencode-agents.json
+rm ~/.config/opencode/commands/decompose-plan.md
+rm ~/.config/opencode/commands/.opencode-commands.json
 ```
 
 ## Development
 
 ```sh
 npm install
-npm test          # compiles, then runs the installer tests against a temp dir
+npm test          # compiles, then runs installer and settings tests against a temp dir
 npm run typecheck
 ```
 
 `src/install.ts` holds the installer and templating logic with no OpenCode
-dependency; `src/index.ts` is the thin plugin wrapper. The Markdown in `agents/`
-is the single source of truth, with `{{MODEL_*}}` placeholders substituted at
-install time.
+dependency; `src/index.ts` is the server part: it installs the agent and command
+files, registers `/agents-status` and `/decompose-status`, and serves the
+settings RPC. `src/agent-file.ts` parses and serialises Markdown agents,
+`src/agent-store.ts` owns create/update/clone/rename/delete/reset on disk,
+`src/rpc.ts` is the contract shared by both parts, and `src/tui.tsx` is the
+terminal settings menu. `src/taskgraph.ts` is the task-graph state machine and
+`src/taskgraph-cli.ts` is its shell entry point. The Markdown in `agents/` and
+`commands/` is the single source of truth, with `{{MODEL_*}}` and
+`{{TASKGRAPH}}` placeholders substituted at install time.
+
+The TUI part is compiled from TSX with `jsxImportSource: "@opentui/solid"`.
+OpenCode supplies Solid and OpenTUI at runtime; they are optional peer
+dependencies, so server-only installs do not pull them in.
+
 
 ## License
 
